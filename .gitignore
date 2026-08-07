@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets (never commit API keys / DB creds)
+.env
+
+# Large / local data (not source)
+data/
+zipfiles_ignore/
+pgdata/
+
+# Generated backtest results
+backtest/results/
+backtest/results_v2/
+backtest/results_v3/
+backtest/results_sweep/
+backtest/results_refine/
+
+# Live paper ledger + state
+live/paper_data/
+live/live_data/
+
+# Logs
+*.log

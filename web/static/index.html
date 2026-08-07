@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>0DTE Short-Put — Strategy Lab</title>
+<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c222c; --border: #2d333b;
+    --text: #e6edf3; --muted: #8b949e; --green: #3fb950; --red: #f85149;
+    --blue: #58a6ff; --orange: #d29922; --accent: #79c0ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; }
+  .app { display: flex; gap: 20px; align-items: flex-start; max-width: 1600px; margin: 0 auto; padding: 24px; }
+  @media (max-width: 900px) { .app { flex-direction: column; } }
+
+  /* ---------- left nav ---------- */
+  .nav { width: 270px; flex-shrink: 0; position: sticky; top: 24px; background: var(--panel);
+         border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .nav-brand { font-weight: 700; font-size: 15px; color: var(--accent); margin-bottom: 4px; }
+  .nav-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+  .nav-group { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 14px 0 6px; }
+  .nav-item { display: block; padding: 8px 10px; border-radius: 6px; color: var(--text); text-decoration: none; font-size: 13px; margin-bottom: 2px; }
+  .nav-item:hover { background: var(--panel2); }
+  .nav-item.active { background: #1f3a24; color: var(--green); font-weight: 600; }
+  .nav-select { width: 100%; background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px; font-size: 13px; margin-bottom: 8px; }
+  .nav-meta { font-size: 11px; color: var(--muted); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+  .nav-meta b { color: var(--text); }
+
+  /* ---------- content ---------- */
+  .content { flex: 1; min-width: 0; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+  h1 { font-size: 21px; letter-spacing: .3px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge { background: var(--panel2); border: 1px solid var(--border); padding: 5px 10px; border-radius: 20px; font-size: 12px; color: var(--muted); }
+  .badge b { color: var(--text); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  .card .value { font-size: 21px; font-weight: 600; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .panel h3 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+  .chart { width: 100%; height: 320px; }
+  .chart.tall { height: 380px; }
+  .legend { display: flex; gap: 18px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; }
+  th:hover { color: var(--text); }
+  td { padding: 7px 10px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+  tr:hover td { background: var(--panel2); }
+  .exit { padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .exit.limit { background: #1f3a24; color: var(--green); }
+  .exit.market { background: #3a2a1f; color: var(--orange); }
+  .exit.settle { background: #2d2f3a; color: var(--blue); }
+  .exit.stop { background: #3a1f2f; color: var(--red); }
+
+  .table-panel { padding: 0 14px 14px; overflow: hidden; }
+  .toolbar { display: flex; gap: 12px; align-items: center; padding: 12px 2px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
+  .scroll { max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .note { background: #2d1f1f; border: 1px solid #5c3030; border-left: 4px solid var(--red); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #f0b6b3; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="nav">
+    <div class="nav-brand">📈 0DTE Short-Put</div>
+    <div class="nav-sub">Strategy Lab · Delta India BTC</div>
+
+    <div class="nav-group">Core</div>
+    <a class="nav-item" data-s="1" href="?s=1">Strategy 1 · 0.2% + carry</a>
+    <a class="nav-item" data-s="2" href="?s=2">Strategy 2 · 1% rolling</a>
+
+    <div class="nav-group">Strategy 3 · rolling + guards</div>
+    <select id="s3-ver" class="nav-select">
+      <option value="">— choose version —</option>
+      <option value="2x5">Stop 2x · Cap 5%</option>
+      <option value="2x8">Stop 2x · Cap 8%</option>
+      <option value="2x10">Stop 2x · Cap 10%</option>
+      <option value="3x5">Stop 3x · Cap 5%</option>
+      <option value="3x8">Stop 3x · Cap 8%</option>
+      <option value="3x10">Stop 3x · Cap 10%</option>
+      <option value="4x5">Stop 4x · Cap 5%</option>
+      <option value="4x8">Stop 4x · Cap 8%</option>
+      <option value="4x10">Stop 4x · Cap 10%</option>
+    </select>
+
+    <div class="nav-group">2×/5% refinements</div>
+    <a class="nav-item" data-s="r0" href="?s=r0">Baseline 2×/5%</a>
+    <a class="nav-item" data-s="r1" href="?s=r1">+ reset after stop</a>
+    <a class="nav-item" data-s="r2" href="?s=r2">+ throttle after 2 losses</a>
+    <a class="nav-item" data-s="r3" href="?s=r3">+ skip day after stop</a>
+    <a class="nav-item" data-s="r4" href="?s=r4">+ cap 3%</a>
+    <a class="nav-item" data-s="r5" href="?s=r5">+ floor 0.5%</a>
+    <a class="nav-item" data-s="r6" href="?s=r6">+ reset + throttle</a>
+    <a class="nav-item" data-s="r7" href="?s=r7">+ all guards</a>
+    <div class="nav-group">Skip-day combos</div>
+    <a class="nav-item" data-s="r8" href="?s=r8">Skip + cap 4%</a>
+    <a class="nav-item" data-s="r9" href="?s=r9">Skip + cap 3%</a>
+    <a class="nav-item" data-s="r10" href="?s=r10">Skip + throttle</a>
+    <a class="nav-item" data-s="r11" href="?s=r11">Skip + cap 4% + throttle</a>
+    <div class="nav-meta" id="nav-meta">Select a strategy to view its full results.</div>
+  </aside>
+
+  <main class="content">
+    <header>
+      <div>
+        <h1>0DTE <span>Short-ATM-Put</span></h1>
+        <div class="sub" id="range-sub">Loading…</div>
+      </div>
+      <div class="badges" id="param-badges"></div>
+    </header>
+
+    <div class="note" id="risk-note" style="display:none"></div>
+    <div class="cards" id="cards"></div>
+
+    <div class="grid">
+      <div class="panel"><h3>Equity Curve (USD)</h3><div class="chart tall" id="ch-equity"></div>
+        <div class="legend" id="eq-legend"></div></div>
+      <div class="panel"><h3>Drawdown (%)</h3><div class="chart tall" id="ch-dd"></div></div>
+    </div>
+
+    <div class="grid">
+      <div class="panel"><h3>Daily Net P&amp;L (USD)</h3><div class="chart" id="ch-pnl"><canvas></canvas></div></div>
+      <div class="panel"><h3>Position Size (lots)</h3><div class="chart" id="ch-lots"><canvas></canvas></div></div>
+    </div>
+
+    <div class="grid">
+      <div class="panel"><h3>Entry vs Exit Premium (pts)</h3><div class="chart" id="ch-prem"><canvas></canvas></div>
+        <div class="legend"><span><b style="color:var(--green)">—</b> Entry</span><span><b style="color:var(--red)">—</b> Exit</span></div></div>
+      <div class="panel"><h3>Exit Type Split</h3><div class="chart" id="ch-exit"><canvas></canvas></div></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h3 style="color:var(--red)">⚡ Risk Deep-Dive — drawdown episodes &amp; wipeout margin</h3>
+      <div class="legend" style="margin-bottom:8px">
+        <span>Worst observed day: <b id="dd-worst"></b></span>
+        <span id="dd-hint"></span>
+      </div>
+      <div class="scroll" style="max-height:280px"><table id="dd-tbl"></table></div>
+    </div>
+
+    <div class="panel table-panel" style="margin-bottom:16px">
+      <h3 style="margin:12px 2px">Position Amplification (lots vs "normal" sizing, log scale)</h3>
+      <div class="chart" id="ch-amp" style="height:260px"><canvas></canvas></div>
+    </div>
+
+    <div class="panel table-panel">
+      <div class="toolbar">
+        <h3 style="margin:0">Trade Log</h3>
+        <input id="tbl-search" placeholder="Search date / strike…" style="flex:1">
+        <select id="tbl-exit"><option value="">All exits</option><option value="limit">Limit 10</option><option value="market">Market close</option><option value="stop">Stop-loss</option><option value="settle">Expiry settle</option></select>
+        <select id="tbl-dir"><option value="">All P&amp;L</option><option value="pos">Winners</option><option value="neg">Losers</option></select>
+      </div>
+      <div class="scroll"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmtUSD = v => '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const fmtNum = v => Number(v).toLocaleString('en-US');
+let trades = [];
+
+let STRAT = new URLSearchParams(location.search).get('s') || '1';
+const api = p => `/api/${p}?s=${STRAT}`;
+
+const S3_IDS = ['2x5','2x8','2x10','3x5','3x8','3x10','4x5','4x8','4x10'];
+function setNav() {
+  document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.s === STRAT));
+  const sel = $('#s3-ver');
+  if (sel) sel.value = S3_IDS.includes(STRAT) ? STRAT : '';
+}
+$('#s3-ver').addEventListener('change', e => { if (e.target.value) location.search = '?s=' + e.target.value; });
+
+async function loadSummary(s) {
+  $('#range-sub').textContent = `${s.strategy_name || ''}  ·  ${s.date_from} → ${s.date_to}  ·  ${s.n_trades} trades`;
+  const p = s.params || {};
+  $('#param-badges').innerHTML = [
+    `Target <b>${(p.target_pct*100)}%/day</b>`,
+    p.budget_cap_pct ? `Cap <b>${(p.budget_cap_pct*100)}%</b>` : null,
+    p.stop_loss_mult ? `Stop <b>${p.stop_loss_mult}×</b>` : null,
+    `Limit buy <b>@ ${p.limit_buy_price}</b>`,
+    `Fees <b>t${(p.taker_fee*100)}% / m${(p.maker_fee*100)}%</b> (${p.fee_on})`,
+    `Slippage <b>${p.slippage_pts} pts</b>`,
+  ].filter(Boolean).map(x => `<span class="badge">${x}</span>`).join('');
+
+  const sign = v => v >= 0 ? 'pos' : 'neg';
+  const cards = [
+    ['Final Balance', fmtUSD(s.end_balance), ''],
+    ['Total Return', `${s.total_return_pct >= 0 ? '+' : ''}${s.total_return_pct}%`, sign(s.total_return_pct)],
+    ['CAGR (ann.)', `${s.cagr_pct >= 0 ? '+' : ''}${s.cagr_pct}%`, ''],
+    ['Total P&L', fmtUSD(s.total_pnl_usd), sign(s.total_pnl_usd)],
+    ['Win Rate', `${s.win_rate_pct}%`, ''],
+    ['Profit Factor', s.profit_factor === Infinity ? '∞' : s.profit_factor, ''],
+    ['Max Drawdown', `${s.max_drawdown_pct}%`, 'neg'],
+    ['Max DD (USD)', fmtUSD(s.max_drawdown_usd), 'neg'],
+    ['Trades', fmtNum(s.n_trades), ''],
+    ['Wins / Losses', `${s.n_wins} / ${s.n_losses}`, ''],
+    ['Best / Worst Day', `${fmtUSD(s.best_day_usd)} / ${fmtUSD(s.worst_day_usd)}`, ''],
+    ['Avg Net / trade', fmtUSD(s.avg_net_usd), sign(s.avg_net_usd)],
+    ['Gross Profit', fmtUSD(s.gross_profit_usd), 'pos'],
+    ['Gross Loss', fmtUSD(s.gross_loss_usd), 'neg'],
+    ['Total Fees', fmtUSD(s.total_fees_usd), ''],
+    ['Avg Lots', s.avg_lots, ''],
+  ];
+  $('#cards').innerHTML = cards.map(([l, v, cls]) =>
+    `<div class="card"><div class="label">${l}</div><div class="value ${cls}">${v}</div></div>`).join('');
+
+  const e = s.exit_breakdown || {};
+  const exits = Object.entries(e).map(([k, v]) => `<b>${v} ${k}</b>`).join(' · ');
+  let note = `⚠️ <b>Risk profile:</b> max drawdown <b>${s.max_drawdown_pct}%</b>, worst day <b>${fmtUSD(s.worst_day_usd)}</b>. Exits: ${exits}.`;
+  if (s.max_drawdown_pct > 100) {
+    note += `<br>💥 <b>BLOW-UP:</b> drawdown exceeds 100% — the balance went <b>NEGATIVE</b>; in real trading the broker would liquidate the account at zero. The headline return is NOT realizable.`;
+  }
+  if (s.blown) {
+    note += `<br>⛔ <b>LIQUIDATED</b> on ${s.blown_date || '?'} — account hit zero and trading halted.`;
+  }
+  $('#risk-note').style.display = 'block';
+  $('#risk-note').innerHTML = note;
+
+  $('#nav-meta').innerHTML =
+    `<b>${s.strategy_name || ''}</b><br>` +
+    `End <b>${fmtUSD(s.end_balance)}</b> · ${s.total_return_pct}%<br>` +
+    `Win ${s.win_rate_pct}% · PF ${s.profit_factor}<br>` +
+    `Max DD <b class="${s.max_drawdown_pct > 50 ? 'neg' : ''}">${s.max_drawdown_pct}%</b>`;
+}
+
+function mkChart(el) { return LightweightCharts.createChart(el, {
+  layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e' },
+  grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+  rightPriceScale: { borderColor: '#2d333b' }, timeScale: { borderColor: '#2d333b' },
+  crosshair: { mode: 0 }, autoSize: true });
+}
+function dailyData(rows, valueKey) { return rows.map(r => ({ time: r.date, value: +r[valueKey] })); }
+
+async function loadEquity() {
+  const eq = await (await fetch(api('equity'))).json();
+  const dd = await (await fetch(api('drawdown'))).json();
+  const ch = mkChart($('#ch-equity'));
+  const line = ch.addSeries(LightweightCharts.AreaSeries, { lineColor: '#3fb950', topColor: 'rgba(63,185,80,.25)', bottomColor: 'rgba(63,185,80,0)', lineWidth: 2 });
+  line.setData(dailyData(eq, 'balance'));
+  $('#eq-legend').innerHTML = `<span>Start <b>${fmtUSD(1000)}</b></span><span>End <b>${fmtUSD(+eq[eq.length-1].balance)}</b></span>`;
+  const ch2 = mkChart($('#ch-dd'));
+  const dline = ch2.addSeries(LightweightCharts.AreaSeries, { lineColor: '#f85149', topColor: 'rgba(248,81,73,.25)', bottomColor: 'rgba(248,81,73,0)', lineWidth: 2 });
+  dline.setData(dailyData(dd, 'drawdown_pct'));
+}
+
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#2d333b';
+Chart.defaults.font.family = 'Segoe UI, sans-serif';
+
+async function loadTrades() {
+  trades = await (await fetch(api('trades'))).json();
+  const labels = trades.map(t => t.date);
+  new Chart($('#ch-pnl canvas'), { type: 'bar', data: {
+    labels, datasets: [{ label: 'Net P&L $', data: trades.map(t => +t.net_usd),
+      backgroundColor: trades.map(t => +t.net_usd >= 0 ? '#3fb95088' : '#f8514988'),
+      borderColor: trades.map(t => +t.net_usd >= 0 ? '#3fb950' : '#f85149'), borderWidth: 1 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { maxTicksLimit: 20 } } } } });
+  new Chart($('#ch-lots canvas'), { type: 'line', data: {
+    labels, datasets: [{ label: 'Lots', data: trades.map(t => +t.lots), borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,.15)', fill: true, tension: .2, pointRadius: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 20 } } } } });
+  new Chart($('#ch-prem canvas'), { type: 'line', data: {
+    labels, datasets: [
+      { label: 'Entry', data: trades.map(t => +t.entry_px), borderColor: '#3fb950', pointRadius: 0, borderWidth: 1.5 },
+      { label: 'Exit', data: trades.map(t => +t.exit_px), borderColor: '#f85149', pointRadius: 0, borderWidth: 1.5 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 20 } }, y: { type: 'logarithmic' } } } });
+  const cnt = {};
+  trades.forEach(t => cnt[t.exit_type] = (cnt[t.exit_type] || 0) + 1);
+  const colors = { limit: '#3fb950', market: '#d29922', stop: '#f85149', settle: '#58a6ff' };
+  new Chart($('#ch-exit canvas'), { type: 'doughnut', data: {
+    labels: Object.keys(cnt), datasets: [{ data: Object.values(cnt), backgroundColor: Object.keys(cnt).map(k => colors[k] || '#8b949e') }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } } });
+  renderTable();
+}
+
+let sortKey = 'date', sortDir = 1;
+function renderTable() {
+  let rows = [...trades];
+  const q = ($('#tbl-search').value || '').toLowerCase();
+  const ex = $('#tbl-exit').value, dir = $('#tbl-dir').value;
+  rows = rows.filter(t => (!q || t.date.includes(q) || String(t.strike).includes(q))
+    && (!ex || t.exit_type === ex)
+    && (!dir || (dir === 'pos' ? +t.net_usd > 0 : +t.net_usd < 0)));
+  rows.sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);
+  const head = ['date','expiry','strike','futures_at_entry','entry_px','lots','exit_type','exit_px','pnl_pts','net_usd','fees_usd','balance'];
+  const titles = { date:'Date', expiry:'Expiry', strike:'Strike', futures_at_entry:'Futures@17:00', entry_px:'Entry px',
+    lots:'Lots', exit_type:'Exit', exit_px:'Exit px', pnl_pts:'P&L pts', net_usd:'Net $', fees_usd:'Fees $', balance:'Balance' };
+  $('#tbl thead').innerHTML = '<tr>' + head.map(h => `<th data-k="${h}">${titles[h]} ${sortKey === h ? (sortDir > 0 ? '▲' : '▼') : ''}</th>`).join('') + '</tr>';
+  $('#tbl tbody').innerHTML = rows.map(t => `<tr>
+    <td>${t.date}</td><td>${t.expiry}</td><td>${fmtNum(t.strike)}</td><td>${fmtNum(+t.futures_at_entry)}</td>
+    <td>${fmtNum(+t.entry_px)}</td><td>${fmtNum(t.lots)}</td>
+    <td><span class="exit ${t.exit_type}">${t.exit_type}</span></td><td>${fmtNum(+t.exit_px)}</td>
+    <td class="${+t.pnl_pts >= 0 ? 'pos' : 'neg'}">${fmtNum(+t.pnl_pts)}</td>
+    <td class="${+t.net_usd >= 0 ? 'pos' : 'neg'}">${fmtUSD(+t.net_usd)}</td><td>${fmtUSD(+t.fees_usd)}</td>
+    <td>${fmtUSD(+t.balance)}</td></tr>`).join('') || '<tr><td colspan="12" style="color:var(--muted)">No rows</td></tr>';
+}
+$('#tbl thead').addEventListener('click', e => {
+  const k = e.target.dataset.k; if (!k) return;
+  if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = 1; }
+  renderTable();
+});
+['#tbl-search', '#tbl-exit', '#tbl-dir'].forEach(s => $(s).addEventListener('input', renderTable));
+
+async function loadRisk() {
+  const r = await (await fetch(api('drawdown_episodes'))).json();
+  $('#dd-worst').textContent = fmtUSD(r.worst_day_usd || 0);
+  const wipe = (r.episodes || []).filter(e => e.would_worst_wipe);
+  $('#dd-hint').innerHTML = wipe.length
+    ? `<span>At a trough, a single worst-day loss = <b style="color:var(--red)">${wipe.length} episode(s)</b> where it would have wiped the balance.</span>`
+    : '';
+  const eps = (r.episodes || []).slice(0, 10);
+  const head = ['start','trough_date','peak','trough','dd_pct','days','lots_at_trough','worst_pct_of_bal','wipe'];
+  const titles = { start:'Start', trough_date:'Trough date', peak:'Peak $', trough:'Trough $', dd_pct:'DD %',
+    days:'Days', lots_at_trough:'Lots at trough', worst_pct_of_bal:'Worst-day % of bal', wipe:'Wipe?' };
+  $('#dd-tbl').innerHTML = '<thead><tr>' + head.map(h => `<th>${titles[h]}</th>`).join('') + '</tr></thead><tbody>' +
+    eps.map(e => `<tr>
+      <td>${e.start}</td><td>${e.trough_date}</td><td>${fmtUSD(e.peak)}</td><td class="neg">${fmtUSD(e.trough)}</td>
+      <td class="neg">${e.dd_pct}%</td><td>${e.days}</td><td>${fmtNum(e.lots_at_trough)}</td>
+      <td class="${e.would_worst_wipe ? 'neg' : 'pos'}">${e.worst_pct_of_bal}%</td>
+      <td>${e.would_worst_wipe ? '<span class="exit stop">YES</span>' : '<span class="exit limit">no</span>'}</td>
+    </tr>`).join('') + '</tbody>';
+  new Chart($('#ch-amp canvas'), { type: 'line', data: {
+    labels: (r.amplification || []).map(a => a.date),
+    datasets: [{ label: 'Amplification (x)', data: (r.amplification || []).map(a => a.x),
+      borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,.12)', fill: true, pointRadius: 0, borderWidth: 1.5 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      scales: { x: { ticks: { maxTicksLimit: 20 } }, y: { type: 'logarithmic', title: { display: true, text: 'x normal sizing (log)' } } },
+      plugins: { legend: { display: false } } } });
+}
+
+setNav();
+(async () => {
+  const s = await (await fetch(api('summary'))).json();
+  await loadSummary(s);
+  await loadEquity();
+  await loadTrades();
+  await loadRisk();
+})();
+</script>
+</body>
+</html>

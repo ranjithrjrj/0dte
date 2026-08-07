@@ -1,0 +1,14 @@
+services:
+  paper:
+    build: .
+    image: delta-paper:latest
+    container_name: delta_paper
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      PAPER_RESULTS_DIR: /app/paper_data
+    env_file:
+      - .env
+    volumes:
+      # paper ledger + state persist on disk
+      - ./paper_data:/app/paper_data
