@@ -243,7 +243,7 @@ const FMT = new Intl.NumberFormat('en-US', {style:'currency', currency:'USD'});
 let chart = null;
 function badge(t){ return '<span class="badge b-'+t+'">'+t+'</span>'; }
 function cls(v){ return v>0 ? 'up' : (v<0 ? 'dn' : 'muted'); }
-function fmtPts(p){ return (p===null||p===undefined)?'—':p.toFixed ? 'PTS '+p.toFixed(2) : p; }
+function fmtPts(p){ return (p===null||p===undefined)?'—':(p.toFixed ? p.toFixed(2) : p); }
 
 async function load(){
   let data;
