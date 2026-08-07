@@ -93,30 +93,33 @@ def cmd_live(args):
         print(f"  monitor: disabled ({e})", flush=True)
     last_action_date = None
     while True:
-        now = datetime.now(timezone.utc)
-        today = now.date()
-        if engine.position is not None:
-            rec = engine.poll(now)
-            if rec:
-                ledger.record(rec); ledger.save_state(engine.state())
-                print(f"[{now:%Y-%m-%d %H:%M:%S}] EXIT {rec['exit_type']}  "
-                      f"net=${rec['net_usd']:.2f}  bal=${rec['balance']:.2f}", flush=True)
-            elif now >= engine.position["close_ts"]:
-                rec = engine.close_position()
-                ledger.record(rec); ledger.save_state(engine.state())
-                print(f"[{now:%Y-%m-%d %H:%M:%S}] CLOSE {rec['exit_type']}  "
-                      f"net=${rec['net_usd']:.2f}  bal=${rec['balance']:.2f}", flush=True)
-        else:
-            entry_ts = at_ist(today, cfg.entry_time_ist)
-            if now >= entry_ts and today != last_action_date:
-                rec = engine.open_position(today)
-                ledger.record(rec); ledger.save_state(engine.state())
-                last_action_date = today
-                if rec.get("skip"):
-                    print(f"[{now:%Y-%m-%d %H:%M:%S}] SKIP  {rec.get('reason')}", flush=True)
-                else:
-                    print(f"[{now:%Y-%m-%d %H:%M:%S}] OPEN {rec['symbol']}  "
-                          f"lots={rec['lots']} @{rec['entry_px']}  bal=${engine.balance:.2f}", flush=True)
+        try:
+            now = datetime.now(timezone.utc)
+            today = now.date()
+            if engine.position is not None:
+                rec = engine.poll(now)
+                if rec:
+                    ledger.record(rec); ledger.save_state(engine.state())
+                    print(f"[{now:%Y-%m-%d %H:%M:%S}] EXIT {rec['exit_type']}  "
+                          f"net=${rec['net_usd']:.2f}  bal=${rec['balance']:.2f}", flush=True)
+                elif now >= engine.position["close_ts"]:
+                    rec = engine.close_position()
+                    ledger.record(rec); ledger.save_state(engine.state())
+                    print(f"[{now:%Y-%m-%d %H:%M:%S}] CLOSE {rec['exit_type']}  "
+                          f"net=${rec['net_usd']:.2f}  bal=${rec['balance']:.2f}", flush=True)
+            else:
+                entry_ts = at_ist(today, cfg.entry_time_ist)
+                if now >= entry_ts and today != last_action_date:
+                    rec = engine.open_position(today)
+                    ledger.record(rec); ledger.save_state(engine.state())
+                    last_action_date = today
+                    if rec.get("skip"):
+                        print(f"[{now:%Y-%m-%d %H:%M:%S}] SKIP  {rec.get('reason')}", flush=True)
+                    else:
+                        print(f"[{now:%Y-%m-%d %H:%M:%S}] OPEN {rec['symbol']}  "
+                              f"lots={rec['lots']} @{rec['entry_px']}  bal=${engine.balance:.2f}", flush=True)
+        except Exception as e:
+            print(f"[{datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}] scheduler error: {e}", flush=True)
         time.sleep(poll_secs)
 
 

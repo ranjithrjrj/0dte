@@ -83,7 +83,9 @@ class Monitor:
             return {"mark": None, "error": "feed_unavailable"}
 
     def summary(self, state, trades) -> dict:
-        trades = [t for t in trades if not t.get("skip")]
+        # closed trades only: OPEN (entry) and SKIP records carry no net_usd
+        trades = [t for t in trades if not t.get("skip")
+                  and isinstance(t.get("net_usd"), (int, float))]
         n = len(trades)
         start = 1000.0
         balance = state.get("balance", start)
@@ -124,6 +126,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        try:
+            self._route()
+        except Exception as e:
+            try:
+                self._send(500, json.dumps({"error": str(e)}))
+            except Exception:
+                pass
+
+    def _route(self):
         m = self.monitor
         path = self.path.split("?")[0]
         if path == "/api/state":
@@ -271,15 +282,16 @@ async function load(){
       +'</div>';
   }
 
-  // trades table + equity
+  // trades table + equity (closed trades only)
   const trades = await (await fetch('/api/trades')).json();
+  const closed = trades.filter(t=>!t.skip && t.net_usd !== undefined);
   const tbody = document.querySelector('#tbl tbody');
-  tbody.innerHTML = trades.filter(t=>!t.skip).slice(-20).reverse().map(t=>
+  tbody.innerHTML = closed.slice(-20).reverse().map(t=>
     '<tr><td>'+t.date+'</td><td>P-'+t.strike+'</td><td>'+t.entry_fill+'</td><td>'+t.lots+'</td>'
     +'<td>'+badge(t.exit_type||'open')+'</td>'
     +'<td class="'+cls(t.net_usd)+'">'+(t.net_usd>=0?'+':'')+FMT.format(t.net_usd)+'</td>'
     +'<td>'+FMT.format(t.balance)+'</td></tr>').join('');
-  const bal = trades.filter(t=>!t.skip).map(t=>({x:t.date, y:t.balance}));
+  const bal = closed.map(t=>({x:t.date, y:t.balance}));
   if (bal.length){
     if (chart){ chart.data.labels=bal.map(b=>b.x); chart.data.datasets[0].data=bal.map(b=>b.y); chart.update(); }
     else {
