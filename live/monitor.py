@@ -88,7 +88,9 @@ class Monitor:
         start = 1000.0
         balance = state.get("balance", start)
         if not n:
-            return {"n_trades": 0, "balance": balance, "start_balance": start}
+            return {"n_trades": 0, "balance": balance, "start_balance": start,
+                    "net_usd": 0.0, "total_return_pct": 0.0, "win_rate_pct": 0.0,
+                    "profit_factor": None, "n_stops": 0, "n_limits": 0}
         net = sum(t.get("net_usd", 0) for t in trades)
         wins = [t for t in trades if t.get("net_usd", 0) > 0]
         gp = sum(t["net_usd"] for t in wins)
@@ -239,11 +241,11 @@ async function load(){
   const pos = st.position;
   document.getElementById('bal').textContent = FMT.format(s.balance);
   document.getElementById('balSub').innerHTML = 'start '+FMT.format(s.start_balance);
-  document.getElementById('ret').textContent = (s.total_return_pct>0?'+':'')+s.total_return_pct+'%';
-  document.getElementById('ret').className = s.total_return_pct>=0 ? 'value g' : 'value r';
-  document.getElementById('retSub').innerHTML = FMT.format(s.net_usd)+' net';
-  document.getElementById('win').textContent = s.win_rate_pct+'%';
-  document.getElementById('winSub').textContent = s.n_stops+' stops · '+s.n_limits+' limits';
+  document.getElementById('ret').textContent = ((s.total_return_pct??0)>0?'+':'')+(s.total_return_pct??0)+'%';
+  document.getElementById('ret').className = (s.total_return_pct??0)>=0 ? 'value g' : 'value r';
+  document.getElementById('retSub').innerHTML = FMT.format(s.net_usd??0)+' net';
+  document.getElementById('win').textContent = (s.win_rate_pct??0)+'%';
+  document.getElementById('winSub').textContent = (s.n_stops??0)+' stops · '+(s.n_limits??0)+' limits';
   document.getElementById('pf').textContent = s.profit_factor ?? '∞';
   document.getElementById('tr').textContent = s.n_trades;
   document.getElementById('trSub').textContent = st.skip_next ? 'skip-next armed' : '';
