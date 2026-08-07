@@ -10,16 +10,18 @@ Endpoints:
   /api/summary   JSON {summary, state, live-mark}
   /api/health    {"status": "ok"}
 """
+import bisect
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from paper_engine import PTS_PER_USD
 
 PORT = int(os.getenv("PORT", "8000"))
+IV_QUANTILES = Path(__file__).resolve().parent / "iv_quantiles.json"
 
 
 def _load_json(path):
@@ -52,6 +54,45 @@ class Monitor:
         self.state_file = self.dir / "paper_state.json"
         self.trades_file = self.dir / "paper_trades.jsonl"
         self.engine = engine
+        self._iv_pcts, self._iv_vals = None, None
+        try:
+            d = json.loads(IV_QUANTILES.read_text(encoding="utf-8"))
+            self._iv_pcts, self._iv_vals = d["pcts"], d["ivs"]
+        except Exception:
+            pass
+
+    def ivp(self, iv):
+        """Percentile of a given IV against the historical ATM-IV distribution."""
+        if iv is None or not self._iv_vals:
+            return None
+        pcts, vals = self._iv_pcts, self._iv_vals
+        if iv <= vals[0]:
+            return pcts[0]
+        if iv >= vals[-1]:
+            return pcts[-1]
+        i = bisect.bisect_left(vals, iv)
+        v0, v1, p0, p1 = vals[i - 1], vals[i], pcts[i - 1], pcts[i]
+        return p0 + (iv - v0) / (v1 - v0) * (p1 - p0)
+
+    def current_iv(self):
+        """Live ATM 0DTE put mark-IV + IVP (vol regime indicator)."""
+        eng = self.engine
+        if eng is None:
+            return None
+        try:
+            now = datetime.now(timezone.utc)
+            today = now.date()
+            fut = eng.feed.futures_price_at(now)
+            if fut is None:
+                return {"iv": None, "ivp": None, "error": "no futures"}
+            strike = int(round(fut / eng.cfg.strike_interval)) * eng.cfg.strike_interval
+            expiry = today + timedelta(days=1)
+            iv = eng.feed.mark_iv("P", strike, expiry)
+            return {"iv": round(iv, 3) if iv is not None else None,
+                    "ivp": round(self.ivp(iv), 1) if iv is not None else None,
+                    "strike": strike, "expiry": str(expiry)}
+        except Exception as e:
+            return {"iv": None, "ivp": None, "error": str(e)}
 
     def state(self) -> dict:
         return _load_json(self.state_file)
@@ -143,7 +184,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(m.trades(), indent=2))
         if path == "/api/summary":
             st, tr = m.state(), m.trades()
-            payload = {"summary": m.summary(st, tr), "state": st, "live": m.live_mark()}
+            payload = {"summary": m.summary(st, tr), "state": st, "live": m.live_mark(),
+                       "iv": m.current_iv()}
             return self._send(200, json.dumps(payload, indent=2))
         if path == "/api/health":
             return self._send(200, json.dumps({"status": "ok"}))
@@ -221,6 +263,7 @@ PAGE = r"""<!DOCTYPE html>
     <div class="card"><div class="label">Win Rate</div><div class="value" id="win">—</div><div class="sub" id="winSub"></div></div>
     <div class="card"><div class="label">Profit Factor</div><div class="value" id="pf">—</div><div class="sub" id="pfSub"></div></div>
     <div class="card"><div class="label">Trades</div><div class="value" id="tr">—</div><div class="sub" id="trSub"></div></div>
+    <div class="card"><div class="label">IV Regime</div><div class="value" id="ivp">—</div><div class="sub" id="ivSub"></div></div>
   </div>
 
   <div class="pos">
@@ -261,6 +304,18 @@ async function load(){
   document.getElementById('tr').textContent = s.n_trades;
   document.getElementById('trSub').textContent = st.skip_next ? 'skip-next armed' : '';
 
+  // IV regime card (live ATM mark-IV + IVP)
+  const iv = data.iv||{};
+  const ivpEl = document.getElementById('ivp');
+  if (iv.ivp!=null){
+    ivpEl.textContent = 'IVP '+iv.ivp;
+    ivpEl.className = 'value ' + (iv.ivp>=80 ? 'r' : iv.ivp>=50 ? 'a' : 'g');
+    document.getElementById('ivSub').textContent = iv.iv!=null ? 'IV '+iv.iv : '';
+  } else {
+    ivpEl.textContent = '—'; ivpEl.className = 'value';
+    document.getElementById('ivSub').textContent = iv.error ? 'IV n/a' : '';
+  }
+
   // position card
   const pb = document.getElementById('posBody');
   if (!pos){
@@ -282,22 +337,33 @@ async function load(){
       +'</div>';
   }
 
-  // trades table + equity (closed trades only)
+  // trades table + equity (closed trades only, plus the live open position)
   const trades = await (await fetch('/api/trades')).json();
   const closed = trades.filter(t=>!t.skip && t.net_usd !== undefined);
+  const rows = [];
+  if (pos){
+    rows.push({date:pos.d, strike:pos.strike, entry_fill:pos.entry_fill, lots:pos.lots,
+               exit_type:'open', net_usd:undefined, balance:s.balance});
+  }
+  rows.push(...closed.slice(-19).reverse());
   const tbody = document.querySelector('#tbl tbody');
-  tbody.innerHTML = closed.slice(-20).reverse().map(t=>
-    '<tr><td>'+t.date+'</td><td>P-'+t.strike+'</td><td>'+t.entry_fill+'</td><td>'+t.lots+'</td>'
-    +'<td>'+badge(t.exit_type||'open')+'</td>'
-    +'<td class="'+cls(t.net_usd)+'">'+(t.net_usd>=0?'+':'')+FMT.format(t.net_usd)+'</td>'
-    +'<td>'+FMT.format(t.balance)+'</td></tr>').join('');
-  const bal = closed.map(t=>({x:t.date, y:t.balance}));
-  if (bal.length){
-    if (chart){ chart.data.labels=bal.map(b=>b.x); chart.data.datasets[0].data=bal.map(b=>b.y); chart.update(); }
+  tbody.innerHTML = rows.map(t=>{
+    const n = t.net_usd;
+    return '<tr><td>'+t.date+'</td><td>P-'+t.strike+'</td><td>'+(t.entry_fill??'—')+'</td><td>'+t.lots+'</td>'
+      +'<td>'+badge(t.exit_type||'open')+'</td>'
+      +'<td class="'+(n===undefined?'muted':cls(n))+'">'+(n===undefined?'—':(n>=0?'+':'')+FMT.format(n))+'</td>'
+      +'<td>'+FMT.format(t.balance)+'</td></tr>';
+  }).join('');
+  // equity curve: closed balances + current live balance (always renders)
+  const pts = closed.map(t=>({x:t.date, y:t.balance}));
+  const lastDate = pos ? pos.d : (closed.length ? closed[closed.length-1].date : new Date().toISOString().slice(0,10));
+  pts.push({x:lastDate, y:s.balance});
+  if (pts.length>=2){
+    if (chart){ chart.data.labels=pts.map(b=>b.x); chart.data.datasets[0].data=pts.map(b=>b.y); chart.update(); }
     else {
       chart = new Chart(document.getElementById('eq'), {
         type:'line',
-        data:{ labels:bal.map(b=>b.x), datasets:[{ data:bal.map(b=>b.y),
+        data:{ labels:pts.map(b=>b.x), datasets:[{ data:pts.map(b=>b.y),
           borderColor:'#58a6ff', backgroundColor:'#58a6ff22', fill:true, tension:.25,
           pointRadius:0, borderWidth:2 }]},
         options:{ responsive:true, plugins:{legend:{display:false}},

@@ -46,6 +46,8 @@ class V3Config:
     loss_throttle_n: int = 0            # halve budget after N consecutive losses (0 = off)
     loss_throttle_factor: float = 0.5
     post_stop_skip: bool = False        # skip next day after a stop-out (cooldown)
+    ivp_min: float = 0.0                # only trade when IVP > this (0 = off)
+    ivp_max: float = 100.0              # only trade when IVP < this
     pts_per_usd: int = 1000
     lot_rounding: str = "ceil"
     min_lots: int = 1
@@ -72,7 +74,8 @@ def run(cfg: V3Config, verbose=True):
     budget_pts = cfg.target_pct * balance * cfg.pts_per_usd
     trades = []
     daily = {}
-    skipped = {"no_futures": 0, "no_entry_trade": 0, "entry_le_limit": 0, "no_close": 0}
+    skipped = {"no_futures": 0, "no_entry_trade": 0, "entry_le_limit": 0, "no_close": 0,
+               "ivp_gate": 0}
     blown = None
     consec_losses = 0
     skip_stop = False
@@ -80,6 +83,20 @@ def run(cfg: V3Config, verbose=True):
     def log(msg):
         if verbose:
             print(msg)
+
+    # IVP series (trailing-365d IV percentile) from analysis/iv_series.py output
+    ivp_map = {}
+    if cfg.ivp_min > 0 or cfg.ivp_max < 100:
+        ivp_csv = Path("data/iv_series.csv")
+        if ivp_csv.exists():
+            import pandas as pd
+            ivp_df = pd.read_csv(ivp_csv)
+            ivp_map = dict(zip(ivp_df["date"].astype(str),
+                               pd.to_numeric(ivp_df["ivp"], errors="coerce")))
+            log(f"  IVP gate enabled ({cfg.ivp_min:g}<IVP<{cfg.ivp_max:g}), "
+                f"{len(ivp_map)} daily IVP points loaded")
+        else:
+            log("  !! data/iv_series.csv not found; IVP gate will skip all days")
 
     with psycopg.connect(DATABASE_URL) as conn:
         cur = conn.cursor()
@@ -95,6 +112,14 @@ def run(cfg: V3Config, verbose=True):
                 daily[d.isoformat()] = round(balance, 2)
                 d += timedelta(days=1)
                 continue
+
+            if cfg.ivp_min > 0 or cfg.ivp_max < 100:
+                ivp = ivp_map.get(d.isoformat())
+                if ivp is None or ivp <= cfg.ivp_min or ivp >= cfg.ivp_max:
+                    skipped["ivp_gate"] += 1
+                    daily[d.isoformat()] = round(balance, 2)
+                    d += timedelta(days=1)
+                    continue
 
             expiry = d + timedelta(days=1)
             entry_ts = at_ist(d, cfg.entry_time_ist)
@@ -231,6 +256,10 @@ def main():
     ap.add_argument("--post_stop_reset", action="store_true", help="reset budget to floor after a stop")
     ap.add_argument("--loss_throttle", type=int, default=0, help="halve budget after N consecutive losses (0=off)")
     ap.add_argument("--post_stop_skip", action="store_true", help="skip next day after a stop-out")
+    ap.add_argument("--ivp", type=float, default=0.0, help="only trade when IVP > this (0=off)")
+    ap.add_argument("--ivp-max", type=float, default=100.0, help="only trade when IVP < this")
+    ap.add_argument("--start", default=None, help="override start date YYYY-MM-DD")
+    ap.add_argument("--end", default=None, help="override end date YYYY-MM-DD")
     ap.add_argument("--results", default=None, help="override results dir")
     args = ap.parse_args()
     cfg = V3Config(
@@ -240,8 +269,13 @@ def main():
         post_stop_reset=args.post_stop_reset,
         loss_throttle_n=args.loss_throttle,
         post_stop_skip=args.post_stop_skip,
+        ivp_min=args.ivp,
+        ivp_max=args.ivp_max,
+        start_date=args.start or V3Config().start_date,
+        end_date=args.end or V3Config().end_date,
         results_dir=args.results
-        or f"backtest/results_sweep/{args.stop:g}x_{int(round(args.cap * 100))}pct",
+        or f"backtest/results_sweep/{args.stop:g}x_{int(round(args.cap * 100))}pct"
+        + (f"_ivp{int(args.ivp)}" if args.ivp > 0 else ""),
     )
     print("=" * 70)
     print(f"STRATEGY #3 — 1% ROLLING + CAP {cfg.budget_cap_pct*100:.0f}% + STOP {cfg.stop_loss_mult:g}x"

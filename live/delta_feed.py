@@ -45,6 +45,17 @@ class DeltaFeed(DataFeed):
         res = data.get("result")
         return float(res["close"]) if res and res.get("close") is not None else None
 
+    def _ticker_quotes(self, symbol: str):
+        data = self._get(f"/v2/tickers/{symbol}")
+        res = data.get("result")
+        return (res.get("quotes") or {}) if isinstance(res, dict) else {}
+
+    def mark_iv(self, opt_type, strike, expiry) -> float:
+        """Return the current mark implied-vol for an option symbol, or None."""
+        q = self._ticker_quotes(self.product_symbol(opt_type, strike, expiry))
+        iv = q.get("mark_iv")
+        return float(iv) if iv is not None else None
+
     def futures_price_at(self, ts):
         return self._ticker_close(self.fut_symbol)
 
