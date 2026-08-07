@@ -84,6 +84,13 @@ def cmd_live(args):
     poll_secs = int(os.getenv("POLL_SECONDS", "15"))
     print(f"Live paper scheduler starting  ({feed.base_url})")
     print(f"  balance=${engine.balance:.2f}  open_position={engine.position is not None}  poll={poll_secs}s")
+    # monitoring dashboard (http://host:$PORT)
+    try:
+        from monitor import start_monitor
+        httpd = start_monitor(args.results or RESULTS_DIR, engine=engine)
+        print(f"  monitor: dashboard listening on :{httpd.server_port}", flush=True)
+    except Exception as e:
+        print(f"  monitor: disabled ({e})", flush=True)
     last_action_date = None
     while True:
         now = datetime.now(timezone.utc)
